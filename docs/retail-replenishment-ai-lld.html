@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store replenishment AI agent – low-level design</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f6f7f9;color:#1d1d1f}
+  main{max-width:1320px;margin:32px auto;padding:0 20px 40px}
+  h1{font-size:22px;margin:0 0 6px} .sub{margin:0 0 24px;color:#555;font-size:14px}
+  .flow{display:flex;flex-direction:column;align-items:center}
+  .row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  .box{background:#fff;border:2px solid #9aa4b2;border-radius:10px;padding:10px 14px;text-align:center;font-size:14px;min-width:170px;max-width:260px}
+  .box b{display:block;margin-bottom:2px}
+  .box small{color:#555}
+  .input{border-color:#607d8b}
+  .agent{border-color:#3367d6;background:#e8f0fe;max-width:420px}
+  .tool{border-color:#3367d6;background:#f3f7ff}
+  .check{border-color:#f9a825;background:#fff8e1}
+  .decision{border-color:#f9a825;background:#fff3c4;transform:none;border-radius:40px;padding:12px 26px;font-weight:600}
+  .fail{border-color:#c62828;background:#fdecea}
+  .pass{border-color:#2e7d32;background:#e8f5e9}
+  .group{border:1px dashed #b0b8c4;border-radius:12px;padding:12px;position:relative;width:100%;margin:6px 0}
+  .group > .tag{position:absolute;top:-10px;left:14px;background:#f6f7f9;padding:0 6px;font-size:12px;color:#555;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .side-col .group > .tag{background:#fff}
+  .arrow{display:flex;flex-direction:column;align-items:center;margin:4px 0;color:#5f6b7a;font-size:12px}
+  .arrow .line{width:2px;height:22px;background:#5f6b7a}
+  .arrow .head{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #5f6b7a}
+  .branches{display:flex;gap:28px;width:100%;justify-content:center;flex-wrap:wrap}
+  .branch{flex:1;min-width:220px;max-width:420px;display:flex;flex-direction:column;align-items:center}
+  .label{font-size:13px;font-weight:700;padding:2px 10px;border-radius:999px;margin-bottom:2px}
+  .label.no{background:#fdecea;color:#c62828} .label.yes{background:#e8f5e9;color:#2e7d32}
+  .or{font-size:12px;color:#777;margin:4px 0}
+  .loop{border-color:#3367d6;background:#f3f7ff}
+  ol{font-size:13px;text-align:left;margin:6px 0 0;padding-left:18px;color:#333}
+  ul{font-size:14px;line-height:1.6;color:#333;margin-top:28px}
+  .cols{display:flex;gap:14px;width:100%;flex-wrap:wrap;justify-content:center}
+  .col{flex:1;min-width:230px;display:flex;flex-direction:column;align-items:center;background:#fff;border:1px solid #d6dbe2;border-radius:10px;padding:10px}
+  .col h3{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em;color:#455a64}
+  .col .box{width:100%;max-width:none;min-width:0}
+  .svc{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#232f3e;border-radius:4px;padding:1px 6px;margin:0 2px 4px}
+  .svc.az{background:#0b3a66}
+  .svc.both{background:#455a64}
+  .cache{border-color:#6a1b9a;background:#f3e5f5}
+  .state{border-color:#00838f;background:#e0f7fa}
+  .ml-box{border-color:#ef6c00;background:#fff3e0}
+  .side{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  h2{font-size:19px;margin:44px 0 6px;border-top:1px solid #d6dbe2;padding-top:24px}
+  .compare{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .compare > .side-col{flex:1;min-width:440px;background:#fff;border:1px solid #d6dbe2;border-radius:14px;padding:16px 14px 20px}
+  .compare .box{max-width:340px}
+  .vtag{font-size:17px;margin:0 0 16px;border:0;padding:0;text-align:center}
+  .vtag span{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 9px;margin-right:8px;vertical-align:middle;letter-spacing:.04em}
+  .vtag .llm{background:#3367d6} .vtag .ml{background:#ef6c00}
+  .key{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#555;margin:0 0 18px}
+  .ringwrap{display:flex;gap:28px;align-items:center;justify-content:center;flex-wrap:wrap;width:100%}
+  .ring{position:relative;width:300px;height:300px;border:4px solid #3367d6;border-radius:50%;margin:30px}
+  .ring .center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;font-size:12px;color:#455a64;width:150px}
+  .vn{position:absolute;top:50%;left:50%;width:0;height:0}
+  .vn span{position:absolute;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 7px;white-space:nowrap}
+  .r1{background:#1565c0}.r2{background:#2e7d32}.r3{background:#ef6c00}.r4{background:#6a1b9a}
+  .dead{background:#9e9e9e!important;text-decoration:line-through}
+  .legend{font-size:13px;line-height:1.8;max-width:420px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;margin:10px 0}
+  th,td{border:1px solid #d6dbe2;padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#eef1f5}
+  td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;color:#555;margin:6px 0 0}
+  .tests{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:10px}
+  .tcard{background:#fff;border:1px solid #d6dbe2;border-left:4px solid #3367d6;border-radius:8px;padding:10px 14px;font-size:13px}
+  .tcard h3{font-size:14px;margin:0 0 6px}
+  .tcard ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55}
+</style>
+</head>
+<body>
+<main>
+  <h1>Store-floor replenishment agent: low-level design on AWS</h1>
+  <p class="sub">Strands agents on Amazon Bedrock, running on Bedrock AgentCore Runtime. Data sources feed the agent&rsquo;s tools; a decision service applies guardrails in code, and a store associate approves, before any pick list reaches the warehouse system. Azure equivalents (matching the HLD) are shown as blue badges and in the mapping table at the end.</p>
+<div class="key"><span><span class="svc">AWS</span> dark badge = AWS service</span><span><span class="svc az">Azure</span> blue badge = Azure equivalent</span></div>
+<div class="flow">
+    <div class="group"><span class="tag">Data ingestion layer (agent tools read from here)</span><div class="cols">
+ <div class="col"><h3>Shelf velocity</h3><div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><span class="svc az">Event Hubs</span><b>RFID and POS events</b><small>units sold per hour, per SKU, per shelf</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Stream consumer</b><small>rolls up hourly velocity; failed batches go to an SQS DLQ (Azure: Service Bus DLQ)</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Live velocity counters</b><small>the only source the velocity reader tool reads</small></div><div class="arrow"><span>same stream, durable copy</span><div class="line"></div><div class="head"></div></div><div class="box state"><span class="svc">Amazon Kinesis Data Firehose</span><span class="svc">Amazon S3</span><span class="svc az">Event Hubs Capture</span><span class="svc az">ADLS Gen2</span><b>Durable velocity history</b><small>Firehose delivers raw RFID and POS events from the Kinesis stream to the S3 raw zone (batched, KMS-encrypted); failed records to an S3 error prefix</small></div></div>
+ <div class="col"><h3>History</h3><div class="box state"><span class="svc">Amazon S3</span><span class="svc az">ADLS Gen2</span><b>Raw and curated data lake</b><small>sales, shelf events, past pick lists</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box tool"><span class="svc">AWS Glue (Spark jobs)</span><span class="svc az">Azure Data Factory</span><b>Feature jobs</b><small>lags, hour, day of week, promos</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box state"><span class="svc">SageMaker Feature Store</span><span class="svc az">ADLS Gen2 curated zone</span><b>Online and offline features</b><small>feature source only (secondary)</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box ml-box"><span class="svc">SageMaker inference endpoint</span><span class="svc az">Azure ML endpoint</span><b>Burn-rate model</b><small>makes the prediction: tonight&rsquo;s units per SKU per shelf</small></div></div>
+ <div class="col"><h3>Inventory</h3><div class="box input"><span class="svc">Warehouse system</span><b>Stock on hand</b><small>back room and DC</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box tool"><span class="svc">AWS DMS (CDC)</span><span class="svc az">Azure Data Factory (CDC)</span><b>Warehouse-to-DynamoDB feed</b><small>primary: DMS change data capture from the warehouse database into DynamoDB; alternatives: AWS Lambda if the warehouse exposes an API or events, Amazon AppFlow if it is a SaaS system; failures alarm and land in an SQS DLQ</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box state"><span class="svc">Amazon DynamoDB</span><span class="svc az">Cosmos DB</span><b>Inventory and reservations</b><small>stock, shelf max capacity, SKUs reserved per store</small></div></div>
+ <div class="col"><h3>External signals</h3><div class="box input"><span class="svc">Amazon API Gateway</span><span class="svc az">API Management</span><b>Weather API</b><small>hourly forecast per store</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><span class="svc az">Event Hubs</span><b>Foot traffic</b><small>door counters and cameras (counts only)</small></div></div>
+</div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box input"><span class="svc">Amazon EventBridge Scheduler</span><span class="svc az">Logic Apps</span><b>Scheduled run per store</b><small>hourly in store hours, plus a pre-close run; one event per store ID; undeliverable events to an SQS DLQ</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box tool"><span class="svc">AWS Step Functions</span><span class="svc az">Durable Functions</span><b>Run orchestrator</b><small>fans out per store, calls the ring router, retries with backoff and timeouts; Catch records the failure and sends it to an SQS DLQ</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Ring router (deterministic code)</b><small>consistent hash of store ID over virtual nodes picks the regional agent (see routing below); no LLM involved</small></div><div class="arrow"><span>routed request</span><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Agent layer</span><div class="side">
+      <div class="box agent"><span class="svc">Amazon Bedrock AgentCore Runtime</span><span class="svc">Strands Agents</span><br><span class="svc az">Azure OpenAI</span><span class="svc az">Semantic Kernel agents</span><b>Replenishment planner on Bedrock (Claude)</b><small>receives the already-routed request for its stores; system prompt: keep shelves stocked through tonight without over-ordering; model chooses tool calls</small></div>
+      <div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Tool-result and pick-list cache</b><small>skip repeat reads within a run</small></div>
+      <div class="box state"><span class="svc">Amazon DynamoDB global table</span><span class="svc az">Cosmos DB (multi-region)</span><b>Session memory and audit log</b><small>every tool call and decision recorded; one table shared by all regional agents</small></div>
+      <div class="box check"><span class="svc">Amazon Bedrock Guardrails</span><span class="svc az">Azure AI Content Safety</span><b>Model input and output filter</b><small>prompt-attack and denied-topic filters on model calls; adds to, never replaces, the in-code guardrails</small></div>
+      <div class="box check"><span class="svc">Strands hooks + Step Functions timeout</span><span class="svc az">Semantic Kernel filters</span><b>Run limits</b><small>max 40 tool calls and 60k input / 8k output tokens per store run; on breach stop, keep the last valid pick list, alarm</small></div>
+    </div></div><div class="arrow"><span>uses tools</span><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Tools (AWS Lambda / Azure Functions exposed to the agent)</span><div class="row">
+      <div class="box tool"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Shelf velocity reader</b><small>units per hour per SKU per shelf, read from Redis only</small></div>
+      <div class="box tool"><span class="svc">Amazon DynamoDB</span><span class="svc az">Cosmos DB</span><b>Inventory checker</b><small>stock on hand and reservations</small></div>
+      <div class="box tool"><span class="svc">SageMaker inference endpoint</span><span class="svc az">Azure ML endpoint</span><b>Burn-rate predictor</b><small>the endpoint predicts tonight&rsquo;s burn from foot traffic and weather (features pulled from Feature Store)</small></div>
+      <div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Pick-list drafter</b><small>SKU, shelf, quantity, reason</small></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box decision">Will this shelf run dry tonight?</div><div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+    <div class="box tool"><span class="svc">AWS Step Functions</span><span class="svc">AWS Lambda</span><span class="svc az">Durable Functions</span><span class="svc az">Azure Functions</span><b>Decision service</b><small>validates the draft schema, loads capacity and reservations, calls guardrails</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Guardrail checks (deterministic, in code: Lambda / Azure Functions)</span><div class="row">
+      <div class="box check"><b>Shelf capacity</b><small>on-shelf + order must not exceed the shelf&rsquo;s max capacity</small></div>
+      <div class="box check"><b>Reserved stock</b><small>must not pull a SKU reserved for another store</small></div>
+      <div class="box check"><b>Fail closed</b><small>missing or stale capacity, stock or reservation data blocks the order</small></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box decision">All checks pass?</div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="branches">
+      <div class="branch"><span class="label no">No: blocked</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>rule, inputs and reason written to the DynamoDB audit log</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>agent proposes an alternative SKU or quantity; it goes through the same guardrails again; max 3 substitute attempts per shelf per run</small></div><div class="arrow"><span>still blocked after 3</span><div class="line"></div><div class="head"></div></div><div class="box fail"><span class="svc">Amazon SNS</span><span class="svc az">Logic Apps</span><b>Escalate to a human</b><small>store manager gets the shelf, blocked attempts and reasons; no pick list is written for that shelf</small></div>
+      </div>
+      <div class="branch"><span class="label yes">Yes: passes</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box check"><span class="svc">Step Functions (wait for task token)</span><span class="svc az">Durable Functions (external event)</span><b>Store-associate approval</b><small>checked pick list shown on the associate&rsquo;s device: approve, reduce quantities or reject; any change re-runs the guardrails; no answer in 30 minutes escalates to the store manager; never published without approval</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box pass"><span class="svc">Warehouse system API</span><span class="svc az">Azure Functions</span><b>Write the pick list</b><small>idempotent write keyed on store, shelf and run ID; after retries, failures go to an SQS DLQ (Service Bus DLQ) and are replayed with the same key</small></div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box pass"><span class="svc">Amazon CloudWatch</span><span class="svc az">Azure Monitor</span><b>Metrics, logs and alarms</b><small>run duration, tool errors, guardrail blocks, Bedrock tokens and throttles, DLQ depth, approval timeouts</small></div>
+  </div>
+  <ul>
+    <li><b>Ingestion:</b> Kinesis streams RFID, POS and foot traffic; Glue jobs land curated history in S3 and SageMaker Feature Store; weather comes through API Gateway.</li>
+    <li><b>Agent:</b> EventBridge triggers a Step Functions run per store; a Lambda router picks the regional agent by consistent hashing; the Strands agent on Bedrock AgentCore Runtime receives the routed request, calls the tools and drafts pick lists.</li>
+    <li><b>Control:</b> the decision service enforces shelf capacity and reserved-SKU guardrails in code and fails closed; a store associate approves before anything reaches the warehouse system; substitutes stop after 3 attempts and escalate.</li>
+    <li><b>Azure:</b> Event Hubs, Event Hubs Capture to ADLS Gen2, Data Factory, Azure Cache for Redis, Cosmos DB, Azure ML endpoint, Azure Functions, Durable Functions and Logic Apps, Azure OpenAI with Semantic Kernel, Azure AI Content Safety, Service Bus DLQ, Azure Monitor, Key Vault and Entra ID.</li>
+  </ul>
+  <h2>Routing to regional agents</h2>
+  <p class="sub">Step Functions calls a Lambda ring router that hashes the store ID onto a ring of virtual nodes in deterministic code, so the same store always reaches the same regional agent (session affinity) and its cache stays warm. The Strands agent does not do the hashing; it only receives the routed request.</p>
+  <div class="flow">
+    <div class="box input"><b>Scheduled run event</b><small>carries store ID and region</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="side"><div class="box tool"><span class="svc">AWS Step Functions</span><span class="svc">AWS Lambda</span><br><span class="svc az">Durable Functions</span><span class="svc az">Azure Functions</span><b>Ring router</b><small>computes a fixed hash (for example MurmurHash3) of the store ID, walks the ring clockwise skipping unhealthy nodes, invokes that region&rsquo;s AgentCore runtime</small></div><div class="box state"><span class="svc">Amazon DynamoDB global table</span><span class="svc az">Cosmos DB</span><b>Ring-membership table</b><small>virtual node tokens, owning region, health status and version; read by the router (cached about 10 s)</small></div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Hash ring with virtual nodes</span><div class="ringwrap"><div class="ring"><div class="vn"><span class="r1" style="left:0px;top:-150px">North-v1</span></div><div class="vn"><span class="r2" style="left:75px;top:-130px">South-v1</span></div><div class="vn"><span class="r3" style="left:130px;top:-75px">East-v1</span></div><div class="vn"><span class="r4" style="left:150px;top:0px">West-v1</span></div><div class="vn"><span class="r1" style="left:130px;top:75px">North-v2</span></div><div class="vn"><span class="r2" style="left:75px;top:130px">South-v2</span></div><div class="vn"><span class="r3" style="left:0px;top:150px">East-v2</span></div><div class="vn"><span class="r4" style="left:-75px;top:130px">West-v2</span></div><div class="vn"><span class="r1" style="left:-130px;top:75px">North-v3</span></div><div class="vn"><span class="r2" style="left:-150px;top:0px">South-v3</span></div><div class="vn"><span class="r3" style="left:-130px;top:-75px">East-v3</span></div><div class="vn"><span class="r4" style="left:-75px;top:-130px">West-v3</span></div><div class="center"><b>hash(store ID)</b><br>walk clockwise to the first virtual node; that node&rsquo;s region owns the store</div></div>
+      <div class="legend"><div><i class="r1"></i>North regional agent: 3 virtual nodes</div><div><i class="r2"></i>South regional agent: 3 virtual nodes</div><div><i class="r3"></i>East regional agent: 3 virtual nodes</div><div><i class="r4"></i>West regional agent: 3 virtual nodes</div><div style="margin-top:8px;color:#555">Virtual nodes keep load even, and only a small slice of stores moves when a node joins or leaves.</div></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Regional planner agents (local cache, shared state)</span><div class="cols">
+      <div class="col"><h3>North agent</h3><div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Local velocity and pick-list cache</b><small></small></div></div><div class="col"><h3>South agent</h3><div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Local velocity and pick-list cache</b><small></small></div></div><div class="col"><h3>East agent</h3><div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Local velocity and pick-list cache</b><small></small></div></div><div class="col"><h3>West agent</h3><div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Local velocity and pick-list cache</b><small></small></div></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box state"><span class="svc">Amazon DynamoDB global table</span><span class="svc az">Cosmos DB (multi-region writes)</span><b>One shared session-state table for all regional agents</b><small>keyed by store ID with an owner attribute; any agent can read any store&rsquo;s state, which makes failover handoff work</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box tool"><b>Decision service and guardrails</b><small>same path as the main flow above</small></div>
+  </div>
+  <h2>Ring membership and health checks</h2>
+  <p class="sub">Where the ring lives and how it changes. Intervals and thresholds below are design defaults, not measurements from a live store.</p>
+  <div class="flow">
+    <div class="box input"><span class="svc">Amazon EventBridge Scheduler</span><span class="svc az">Functions timer trigger</span><b>Every 30 s</b><small>triggers the heartbeat checker</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box tool"><span class="svc">AWS Lambda</span><span class="svc">CloudWatch alarms</span><br><span class="svc az">Azure Functions</span><span class="svc az">Azure Monitor alerts</span><b>Heartbeat checker</b><small>calls each regional agent&rsquo;s health check and reads its error-rate alarm; Route 53 health checks (Azure: Traffic Manager or Front Door probes) can be used if agents sit behind web endpoints</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box decision">3 failed checks in a row?</div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box state"><span class="svc">Amazon DynamoDB global table</span><span class="svc az">Cosmos DB</span><b>Ring-membership table update</b><small>conditional write sets the node to unhealthy and bumps the version; recovery after 3 good checks sets it back</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box tool"><b>Ring router picks it up</b><small>on its next membership read it skips that node&rsquo;s virtual nodes, so each of its ranges moves to the next node clockwise</small></div>
+  </div>
+  <h2>Failover: a regional agent goes unhealthy</h2>
+  <div class="flow">
+    <div class="box check"><span class="svc">Heartbeat Lambda + CloudWatch</span><span class="svc az">Functions + Azure Monitor</span><b>East agent marked unhealthy</b><small>status written to the ring-membership table</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Ring after failover</span><div class="ringwrap"><div class="ring"><div class="vn"><span class="r1" style="left:0px;top:-150px">North-v1</span></div><div class="vn"><span class="r2" style="left:75px;top:-130px">South-v1</span></div><div class="vn"><span class="r3 dead" style="left:130px;top:-75px">East-v1</span></div><div class="vn"><span class="r4" style="left:150px;top:0px">West-v1</span></div><div class="vn"><span class="r1" style="left:130px;top:75px">North-v2</span></div><div class="vn"><span class="r2" style="left:75px;top:130px">South-v2</span></div><div class="vn"><span class="r3 dead" style="left:0px;top:150px">East-v2</span></div><div class="vn"><span class="r4" style="left:-75px;top:130px">West-v2</span></div><div class="vn"><span class="r1" style="left:-130px;top:75px">North-v3</span></div><div class="vn"><span class="r2" style="left:-150px;top:0px">South-v3</span></div><div class="vn"><span class="r3 dead" style="left:-130px;top:-75px">East-v3</span></div><div class="vn"><span class="r4" style="left:-75px;top:-130px">West-v3</span></div><div class="center"><b>East virtual nodes removed</b><br>each East range passes to the next node clockwise</div></div>
+      <div class="legend"><div>Stores that hashed to an East virtual node now land on the next node clockwise (West or North in this example).</div><div style="margin-top:8px">Every other store keeps its current agent.</div></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box state"><span class="svc">Amazon DynamoDB global table</span><span class="svc az">Cosmos DB</span><b>State handoff</b><small>all regional agents share one global table, so the new owner reads East&rsquo;s session state and open pick-list drafts directly, with no copy step; it takes ownership with a conditional write on the owner attribute</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box cache"><span class="svc">Amazon ElastiCache (Redis)</span><span class="svc az">Azure Cache for Redis</span><b>Cache warm-up</b><small>velocity and inventory reads warm on the first runs; Step Functions retries any in-flight run</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box pass"><b>Runs continue</b><small>when East recovers, its ranges and state move back the same way</small></div>
+  </div>
+  <h2>Errors and dead-letter queues</h2>
+  <table>
+    <tr><th>Where</th><th>AWS handling</th><th>Azure equivalent</th></tr>
+    <tr><td>Kinesis stream consumer</td><td>Lambda retries a failed batch (bisect on error, max 3 retries), then sends it to an SQS on-failure DLQ</td><td>Functions retry policy with Event Hubs checkpointing; failures to a Service Bus DLQ</td></tr>
+    <tr><td>Firehose to S3</td><td>Records that fail delivery go to an S3 error prefix and alarm</td><td>Event Hubs Capture; failed processing to ADLS Gen2 error folder</td></tr>
+    <tr><td>Warehouse feed</td><td>DMS task errors alarm; Lambda alternative uses an SQS DLQ</td><td>Data Factory pipeline failure alerts</td></tr>
+    <tr><td>Scheduled events</td><td>EventBridge target DLQ (SQS)</td><td>Logic Apps run history and Service Bus DLQ</td></tr>
+    <tr><td>Store run</td><td>Step Functions Retry with backoff, then Catch: audit record, SQS DLQ, alarm; last valid pick list stands</td><td>Durable Functions retry options and a Service Bus DLQ</td></tr>
+    <tr><td>Warehouse write</td><td>Retries, then SQS DLQ; replay uses the same idempotency key so no duplicate pick list</td><td>Service Bus DLQ with the same idempotency key</td></tr>
+  </table>
+  <p class="note">Every DLQ has a CloudWatch (Azure Monitor) alarm on depth greater than zero.</p>
+  <h2>Run limits</h2>
+  <table>
+    <tr><th>Limit</th><th>Default</th><th>Enforced by</th><th>On breach</th></tr>
+    <tr><td>Tool calls per store run</td><td class="n">40</td><td rowspan="3">Strands hook counting calls and tokens (Azure: Semantic Kernel filters)</td><td rowspan="3">Stop the run, keep the last valid pick list, audit and alarm</td></tr>
+    <tr><td>Tool calls per shelf</td><td class="n">6</td></tr>
+    <tr><td>Tokens per store run</td><td class="n">60k in / 8k out</td></tr>
+    <tr><td>Max output tokens per model call</td><td class="n">2,000</td><td>Bedrock request setting (Azure OpenAI max tokens)</td><td>Response truncated; draft fails schema validation and is blocked</td></tr>
+    <tr><td>Substitute attempts per shelf</td><td class="n">3</td><td>Decision service counter</td><td>Escalate to the store manager</td></tr>
+    <tr><td>Wall-clock per store run</td><td class="n">120 s</td><td>Step Functions timeout (Durable Functions timer)</td><td>Retry once, then the last valid pick list stands</td></tr>
+    <tr><td>Associate approval wait</td><td class="n">30 min</td><td>Step Functions task-token heartbeat (Durable Functions timer)</td><td>Escalate to the store manager; nothing is published</td></tr>
+  </table>
+  <h2>Security</h2>
+  <div class="tests">
+    <div class="tcard"><h3>Bedrock Guardrails (Azure AI Content Safety)</h3><ul>
+      <li>Attached to every model call: prompt-attack filter (Azure: Prompt Shields) on any free text such as associate notes, denied topics, PII filters.</li>
+      <li>Filters model input and output only; capacity and reserved-SKU rules stay in code and have the final say.</li>
+    </ul></div>
+    <div class="tcard"><h3>IAM least privilege (Entra ID managed identities + RBAC)</h3><ul>
+      <li>One role per tool Lambda, scoped to its own table or endpoint; tools are read-only.</li>
+      <li>The agent runtime role can invoke only its 4 tools, the one Bedrock model and the guardrail; it cannot call the warehouse API.</li>
+      <li>Only the decision service role, after approval, can write pick lists; warehouse credentials in Secrets Manager (Azure: Key Vault).</li>
+    </ul></div>
+    <div class="tcard"><h3>KMS encryption (Azure Key Vault keys)</h3><ul>
+      <li>Customer managed KMS keys for DynamoDB, S3, Kinesis, Firehose, SQS, ElastiCache, SageMaker and CloudWatch Logs.</li>
+      <li>TLS in transit everywhere; key use logged in CloudTrail (Azure: Monitor activity log).</li>
+    </ul></div>
+  </div>
+  <h2>AWS to Azure mapping</h2>
+  <p class="sub">Matches the Azure equivalents in the replenishment HLD.</p>
+  <table>
+    <tr><th>Component</th><th>AWS</th><th>Azure</th></tr>
+    <tr><td>RFID, POS and foot traffic streams</td><td>Kinesis Data Streams</td><td>Event Hubs</td></tr>
+    <tr><td>Durable velocity history</td><td>Kinesis Data Firehose to S3</td><td>Event Hubs Capture to ADLS Gen2</td></tr>
+    <tr><td>Data lake</td><td>S3</td><td>ADLS Gen2</td></tr>
+    <tr><td>Feature jobs</td><td>Glue</td><td>Azure Data Factory</td></tr>
+    <tr><td>Features (secondary)</td><td>SageMaker Feature Store</td><td>ADLS Gen2 curated zone</td></tr>
+    <tr><td>Burn-rate prediction</td><td>SageMaker inference endpoint</td><td>Azure ML endpoint</td></tr>
+    <tr><td>Warehouse feed</td><td>DMS CDC (alternatives: Lambda, AppFlow)</td><td>Data Factory CDC</td></tr>
+    <tr><td>Live counters and caches</td><td>ElastiCache (Redis)</td><td>Azure Cache for Redis</td></tr>
+    <tr><td>Inventory, session state, audit, ring membership</td><td>DynamoDB global tables</td><td>Cosmos DB (multi-region)</td></tr>
+    <tr><td>Scheduling</td><td>EventBridge Scheduler</td><td>Logic Apps</td></tr>
+    <tr><td>Run orchestration, router, approval wait</td><td>Step Functions + Lambda</td><td>Durable Functions + Azure Functions</td></tr>
+    <tr><td>Agent and model</td><td>Strands Agents on AgentCore Runtime, Bedrock (Claude)</td><td>Semantic Kernel agents, Azure OpenAI</td></tr>
+    <tr><td>Model input and output filter</td><td>Bedrock Guardrails</td><td>Azure AI Content Safety</td></tr>
+    <tr><td>Tools, guardrails, warehouse write</td><td>Lambda</td><td>Azure Functions</td></tr>
+    <tr><td>External weather API</td><td>API Gateway</td><td>API Management</td></tr>
+    <tr><td>Dead-letter queues</td><td>SQS DLQ</td><td>Service Bus DLQ</td></tr>
+    <tr><td>Escalation notice</td><td>SNS</td><td>Logic Apps</td></tr>
+    <tr><td>Health checks</td><td>Heartbeat Lambda, CloudWatch alarms, Route 53 health checks</td><td>Functions timer, Azure Monitor alerts, Traffic Manager or Front Door probes</td></tr>
+    <tr><td>Monitoring</td><td>CloudWatch, X-Ray</td><td>Azure Monitor, Application Insights</td></tr>
+    <tr><td>Identity and secrets</td><td>IAM, Secrets Manager</td><td>Entra ID, Key Vault</td></tr>
+    <tr><td>Encryption keys</td><td>KMS</td><td>Key Vault keys</td></tr>
+  </table>
+  <h2>Latency targets</h2>
+  <p class="sub">Design targets for a multi-store retailer. These are estimates, not measurements from a live store. Replenishment is a scheduled back-office path, so the agent path is measured in seconds, not milliseconds on a shopper path.</p>
+  <table>
+    <tr><th>Path</th><th>What it covers</th><th>P50 (ms)</th><th>P90 (ms)</th><th>P99 (ms)</th></tr>
+    <tr><td>Cached pick-list read</td><td>Store associate or dashboard reads the latest pick list from Redis (DynamoDB on miss)</td><td class="n">10</td><td class="n">25</td><td class="n">60</td></tr>
+    <tr><td>Hash ring routing</td><td>Lambda ring router hashes store ID (membership cached) and picks the regional agent</td><td class="n">1</td><td class="n">2</td><td class="n">5</td></tr>
+    <tr><td>Single tool call</td><td>Velocity, inventory or burn-rate tool (Lambda plus Redis, DynamoDB or the SageMaker endpoint)</td><td class="n">25</td><td class="n">60</td><td class="n">150</td></tr>
+    <tr><td>Agent decision per shelf</td><td>Bedrock Claude reasoning plus its tool calls for one shelf</td><td class="n">1,500</td><td class="n">3,500</td><td class="n">7,000</td></tr>
+    <tr><td>Scheduled agent run per store</td><td>EventBridge trigger to all pick lists written, shelves batched per call</td><td class="n">8,000</td><td class="n">20,000</td><td class="n">45,000</td></tr>
+    <tr><td>Guardrail evaluation</td><td>Capacity, reserved-SKU and fail-closed checks in code</td><td class="n">2</td><td class="n">5</td><td class="n">15</td></tr>
+    <tr><td>Warehouse write</td><td>Idempotent pick-list write to the warehouse system plus audit record</td><td class="n">120</td><td class="n">300</td><td class="n">800</td></tr>
+  </table>
+  <p class="note">Design point: a store run must finish well inside its hourly window. On timeout, the run is retried once and then the last valid pick list stands (fail closed: never write an unchecked pick list). Store-associate approval time is human wait and is not counted in these targets.</p>
+  <h2>Testing</h2>
+  <div class="tests">
+    <div class="tcard"><h3>1. Load testing</h3><ul>
+      <li>Tooling: k6 or Locust, run at scale with Distributed Load Testing on AWS (ECS Fargate workers).</li>
+      <li>Scheduled path: fire runs for 2,000 stores in one window, about 200 concurrent agent sessions (example target).</li>
+      <li>Read path: 2,000 pick-list reads per second from store devices (example target).</li>
+      <li>Watch Bedrock throttling, AgentCore scaling, Step Functions concurrency and Lambda limits; include a spike (all stores at pre-close) and an 8-hour soak.</li>
+    </ul></div>
+    <div class="tcard"><h3>2. Latency validation</h3><ul>
+      <li>P50, P90 and P99 per path from k6 results, CloudWatch metrics and AWS X-Ray traces.</li>
+      <li>Break the run down by span: routing, each Bedrock call, each tool call, guardrails, warehouse write.</li>
+      <li>Pass only if every path meets the table at target load; CloudWatch alarms on P99 breaches.</li>
+    </ul></div>
+    <div class="tcard"><h3>3. Guardrail correctness</h3><ul>
+      <li>Capacity: orders that land just below, at and above the shelf&rsquo;s max capacity; above must block.</li>
+      <li>Reserved SKU: any pull of a SKU reserved for another store must block, including partial quantities.</li>
+      <li>Fail closed: missing, stale or timed-out capacity, stock or reservation data blocks the order.</li>
+      <li>Substitutes go through the same checks; a golden set of cases must never change result.</li>
+    </ul></div>
+    <div class="tcard"><h3>4. Failover testing</h3><ul>
+      <li>Make the East agent unhealthy with AWS Fault Injection Service (or fail its health check).</li>
+      <li>Check only East&rsquo;s ranges move to the next node, and the new owner reads state from the shared DynamoDB global table.</li>
+      <li>Check in-flight runs are retried without duplicate pick lists (idempotency keys).</li>
+      <li>Measure cache warm-up time, then bring East back and verify ranges and state return.</li>
+    </ul></div>
+    <div class="tcard"><h3>5. Session affinity</h3><ul>
+      <li>Repeated runs for the same store ID always reach the same regional agent replica.</li>
+      <li>Across many store IDs, key share per agent is close to even.</li>
+      <li>After a node joins or leaves, only the expected share of stores changes agent.</li>
+    </ul></div>
+    <div class="tcard"><h3>6. Audit log completeness</h3><ul>
+      <li>Every draft (written, blocked or substituted) has exactly one DynamoDB audit record.</li>
+      <li>Records hold store ID, shelf, SKU, quantity, tool results, each guardrail result, outcome, agent replica, model and timestamp.</li>
+      <li>Reconcile: pick lists in the warehouse system equal written audit records.</li>
+    </ul></div>
+    <div class="tcard"><h3>7. Regression testing</h3><ul>
+      <li><b>pytest (main framework):</b> guardrail and decision-service logic, boundary cases with parametrize.</li>
+      <li><b>Fixtures:</b> sample SKUs, shelves with max capacity, reservations, and sales and velocity histories in conftest; a golden set of agent transcripts replayed with stubbed Bedrock responses.</li>
+      <li><b>Playwright:</b> only for UI checks, such as the store associate&rsquo;s pick-list screen and the blocked-order view.</li>
+    </ul></div>
+    <div class="tcard"><h3>8. CI</h3><ul>
+      <li>Run the suite on every change to the agent prompt, tools, decision service or guardrail code, in AWS CodePipeline with CodeBuild or GitHub Actions.</li>
+      <li>A failing guardrail test blocks merge and deploy; prompt changes also run an evaluation set.</li>
+      <li>Results go to the CI dashboard and as CloudWatch metrics, with an alarm on any guardrail failure.</li>
+    </ul></div>
+    <div class="tcard"><h3>9. Limits, approval and DLQs</h3><ul>
+      <li>Substitute loop stops at 3 attempts and escalates; no pick list written for that shelf.</li>
+      <li>Approval timeout escalates and publishes nothing; edited quantities re-run guardrails.</li>
+      <li>Tool-call and token caps stop the run; injected failures land in each DLQ and replay without duplicates.</li>
+    </ul></div>
+  </div>
+</main>
+</body>
+</html>

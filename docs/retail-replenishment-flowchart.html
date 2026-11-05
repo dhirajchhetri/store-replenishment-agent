@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store-floor replenishment agent – flowchart</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f6f7f9;color:#1d1d1f}
+  main{max-width:980px;margin:32px auto;padding:0 20px 40px}
+  h1{font-size:22px;margin:0 0 6px} .sub{margin:0 0 24px;color:#555;font-size:14px}
+  .flow{display:flex;flex-direction:column;align-items:center}
+  .row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  .box{background:#fff;border:2px solid #9aa4b2;border-radius:10px;padding:10px 14px;text-align:center;font-size:14px;min-width:170px;max-width:260px}
+  .box b{display:block;margin-bottom:2px}
+  .box small{color:#555}
+  .input{border-color:#607d8b}
+  .agent{border-color:#3367d6;background:#e8f0fe;max-width:420px}
+  .tool{border-color:#3367d6;background:#f3f7ff}
+  .check{border-color:#f9a825;background:#fff8e1}
+  .decision{border-color:#f9a825;background:#fff3c4;transform:none;border-radius:40px;padding:12px 26px;font-weight:600}
+  .fail{border-color:#c62828;background:#fdecea}
+  .pass{border-color:#2e7d32;background:#e8f5e9}
+  .group{border:1px dashed #b0b8c4;border-radius:12px;padding:12px;position:relative;width:100%}
+  .group > .tag{position:absolute;top:-10px;left:14px;background:#f6f7f9;padding:0 6px;font-size:12px;color:#555;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .arrow{display:flex;flex-direction:column;align-items:center;margin:4px 0;color:#5f6b7a;font-size:12px}
+  .arrow .line{width:2px;height:22px;background:#5f6b7a}
+  .arrow .head{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #5f6b7a}
+  .branches{display:flex;gap:28px;width:100%;justify-content:center;flex-wrap:wrap}
+  .branch{flex:1;min-width:260px;max-width:420px;display:flex;flex-direction:column;align-items:center}
+  .label{font-size:13px;font-weight:700;padding:2px 10px;border-radius:999px;margin-bottom:2px}
+  .label.no{background:#fdecea;color:#c62828} .label.yes{background:#e8f5e9;color:#2e7d32}
+  .or{font-size:12px;color:#777;margin:4px 0}
+  .loop{border-color:#3367d6;background:#f3f7ff}
+  ol{font-size:13px;text-align:left;margin:6px 0 0;padding-left:18px;color:#333}
+  ul{font-size:14px;line-height:1.6;color:#333;margin-top:28px}
+  main{max-width:1320px}
+  .compare{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .compare > .side-col{flex:1;min-width:440px;background:#fff;border:1px solid #d6dbe2;border-radius:14px;padding:16px 14px 20px}
+  .vtag{font-size:16px;margin:0 0 14px;text-align:center}
+  .vtag span{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:4px;padding:2px 8px;margin-right:6px;vertical-align:middle}
+  .vtag .llm{background:#3367d6}.vtag .ml{background:#00838f}
+  .ml-box{border-color:#00838f;background:#e0f7fa}
+  .state{border-color:#00838f;background:#e0f7fa}
+  .svc{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#232f3e;border-radius:4px;padding:1px 6px;margin-bottom:4px}
+  .side-col .group > .tag{background:#fff}
+</style>
+</head>
+<body>
+<main>
+  <h1>Store-floor replenishment agent</h1>
+  <p class="sub">Left: a Strands agent on Amazon Bedrock (Claude) acting as a replenishment planner. Right: the same problem solved with traditional machine learning on AWS. In both, a pick list is written only if the guardrail check passes.</p>
+
+  <div class="compare">
+    <div class="side-col">
+      <h2 class="vtag"><span class="llm">LLM AGENT</span>Bedrock Strands version</h2>
+  <div class="flow">
+    <div class="box agent"><b>Strands agent: replenishment planner</b><small>Model: Amazon Bedrock Claude<br>System prompt: keep shelves stocked through tonight without over-ordering<br>The model decides which tools to call and in what order</small></div>
+
+    <div class="arrow"><span>uses tools</span><div class="line"></div><div class="head"></div></div>
+
+    <div class="group"><span class="tag">Tools</span>
+      <div class="row">
+        <div class="box tool"><b>RFID and POS reader</b><small>units sold per hour, per SKU, per shelf</small></div>
+        <div class="box tool"><b>Warehouse inventory checker</b><small>stock on hand in the back room</small></div>
+        <div class="box tool"><b>Demand predictor</b><small>foot traffic and weather</small></div>
+        <div class="box tool"><b>Pick-list generator</b><small>writes to the warehouse system</small></div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+
+    <div class="box loop" style="max-width:420px"><b>Agent loop</b>
+      <ol>
+        <li>Read shelf velocity (RFID and POS reader)</li>
+        <li>Compare against stock on hand (inventory checker)</li>
+        <li>Call the demand predictor for tonight's burn rate</li>
+      </ol>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+
+    <div class="box decision">Will this shelf run dry tonight?</div>
+
+    <div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+
+    <div class="group"><span class="tag">Guardrail tool (deterministic, in code)</span>
+      <div class="row">
+        <div class="box check"><b>Shelf capacity</b><small>block any order above the shelf's max capacity</small></div>
+        <div class="box check"><b>Reserved stock</b><small>block pulling from a SKU reserved for another store</small></div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+
+    <div class="box decision">Guardrail passes?</div>
+
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+
+    <div class="branches">
+      <div class="branch">
+        <span class="label no">No: blocked</span>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>record which rule stopped it</small></div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>alternative SKU or quantity</small></div>
+      </div>
+      <div class="branch">
+        <span class="label yes">Yes: passes</span>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><b>Write the pick list</b><small>pick-list generator sends it to the warehouse system</small></div>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="side-col">
+      <h2 class="vtag"><span class="ml">TRADITIONAL ML</span>ML version (no LLM agent)</h2>
+  <div class="flow">
+    <div class="box input"><span class="svc">Amazon EventBridge</span><b>Scheduled forecast run</b><small>for example hourly during store hours</small></div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Ingestion</span>
+      <div class="row">
+        <div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><b>Shelf sales and sensors</b><small>RFID and POS, per SKU per shelf</small></div>
+        <div class="box input"><span class="svc">Amazon S3</span><b>Historical data</b><small>sales history, weather, foot traffic</small></div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box ml-box"><span class="svc">AWS Glue</span><b>Feature pipeline</b><small>lags, hour, day of week, promos, weather, traffic</small></div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box ml-box"><span class="svc">Amazon S3 + SageMaker Feature Store</span><b>Training data and features</b><small></small></div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Amazon SageMaker</span>
+      <div class="row">
+        <div class="box ml-box"><span class="svc">SageMaker training job</span><b>Demand forecasting model</b><small>XGBoost or a time-series model, retrained on schedule</small></div>
+        <div class="box ml-box"><span class="svc">SageMaker inference endpoint</span><b>Tonight&rsquo;s forecast</b><small>units sold per SKU per shelf</small></div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">AWS Step Functions orchestration (AWS Lambda steps)</span>
+      <div class="flow">
+        <div class="box state"><span class="svc">Amazon DynamoDB / Aurora</span><b>Inventory and reorder state</b><small>stock on hand, reorder points, reservations</small></div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box tool"><span class="svc">AWS Lambda</span><b>Decision step</b><small>reorder point = forecast demand until restock + safety stock</small></div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box decision">Below reorder point tonight?</div>
+        <div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+        <div class="row">
+          <div class="box check"><span class="svc">AWS Lambda</span><b>Shelf capacity guardrail</b><small>block any order above max capacity</small></div>
+          <div class="box check"><span class="svc">AWS Lambda</span><b>Reserved stock guardrail</b><small>block SKUs reserved for another store</small></div>
+        </div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box decision">Guardrail passes?</div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="branches">
+      <div class="branch">
+        <span class="label no">No: blocked</span>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>reason written to DynamoDB</small></div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>alternative SKU or quantity, from rules</small></div>
+      </div>
+      <div class="branch">
+        <span class="label yes">Yes: passes</span>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><b>Write the pick list</b><small>sent to the warehouse system; reorder state updated</small></div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box pass"><span class="svc">Amazon CloudWatch</span><b>Monitoring</b><small>model drift and forecast accuracy, guardrail blocks, run failures</small></div>
+  </div>
+    </div>
+  </div>
+
+  <ul>
+    <li><b>Agent:</b> Strands' model-driven loop. Claude picks the tool sequence to keep shelves stocked through tonight without over-ordering.</li>
+    <li><b>Loop:</b> read shelf velocity, compare with stock on hand, predict tonight's burn rate, and emit a pick list only if a shelf will run dry.</li>
+    <li><b>Guardrail:</b> blocks orders above shelf max capacity or from SKUs reserved for another store.</li>
+    <li><b>Outcome:</b> a block means log it and suggest a substitute. A pass means write the pick list to the warehouse system.</li>
+    <li><b>ML version:</b> EventBridge schedules runs, Kinesis and S3 feed a Glue feature pipeline, a SageMaker model forecasts demand, and Step Functions with Lambda apply reorder-point rules and the same guardrails, with CloudWatch watching drift. It makes the same decision without an LLM; it is cheaper and more predictable per call, but every new signal needs feature work and retraining, while the agent can reason over new tools.</li>
+  </ul>
+</main>
+</body>
+</html>

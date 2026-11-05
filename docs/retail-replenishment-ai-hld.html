@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store replenishment – high-level design (AI agent vs traditional ML)</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f6f7f9;color:#1d1d1f}
+  main{max-width:1320px;margin:32px auto;padding:0 20px 40px}
+  h1{font-size:22px;margin:0 0 6px} .sub{margin:0 0 24px;color:#555;font-size:14px}
+  .flow{display:flex;flex-direction:column;align-items:center}
+  .row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  .box{background:#fff;border:2px solid #9aa4b2;border-radius:10px;padding:10px 14px;text-align:center;font-size:14px;min-width:170px;max-width:260px}
+  .box b{display:block;margin-bottom:2px}
+  .box small{color:#555}
+  .input{border-color:#607d8b}
+  .agent{border-color:#3367d6;background:#e8f0fe;max-width:420px}
+  .tool{border-color:#3367d6;background:#f3f7ff}
+  .check{border-color:#f9a825;background:#fff8e1}
+  .decision{border-color:#f9a825;background:#fff3c4;transform:none;border-radius:40px;padding:12px 26px;font-weight:600}
+  .fail{border-color:#c62828;background:#fdecea}
+  .pass{border-color:#2e7d32;background:#e8f5e9}
+  .group{border:1px dashed #b0b8c4;border-radius:12px;padding:12px;position:relative;width:100%;margin:6px 0}
+  .group > .tag{position:absolute;top:-10px;left:14px;background:#f6f7f9;padding:0 6px;font-size:12px;color:#555;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .side-col .group > .tag{background:#fff}
+  .arrow{display:flex;flex-direction:column;align-items:center;margin:4px 0;color:#5f6b7a;font-size:12px}
+  .arrow .line{width:2px;height:22px;background:#5f6b7a}
+  .arrow .head{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #5f6b7a}
+  .branches{display:flex;gap:28px;width:100%;justify-content:center;flex-wrap:wrap}
+  .branch{flex:1;min-width:220px;max-width:420px;display:flex;flex-direction:column;align-items:center}
+  .label{font-size:13px;font-weight:700;padding:2px 10px;border-radius:999px;margin-bottom:2px}
+  .label.no{background:#fdecea;color:#c62828} .label.yes{background:#e8f5e9;color:#2e7d32}
+  .or{font-size:12px;color:#777;margin:4px 0}
+  .loop{border-color:#3367d6;background:#f3f7ff}
+  ol{font-size:13px;text-align:left;margin:6px 0 0;padding-left:18px;color:#333}
+  ul{font-size:14px;line-height:1.6;color:#333;margin-top:28px}
+  .cols{display:flex;gap:14px;width:100%;flex-wrap:wrap;justify-content:center}
+  .col{flex:1;min-width:230px;display:flex;flex-direction:column;align-items:center;background:#fff;border:1px solid #d6dbe2;border-radius:10px;padding:10px}
+  .col h3{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em;color:#455a64}
+  .col .box{width:100%;max-width:none;min-width:0}
+  .svc{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#232f3e;border-radius:4px;padding:1px 6px;margin:0 2px 4px}
+  .svc.az{background:#0b3a66}
+  .svc.both{background:#455a64}
+  .cache{border-color:#6a1b9a;background:#f3e5f5}
+  .state{border-color:#00838f;background:#e0f7fa}
+  .ml-box{border-color:#ef6c00;background:#fff3e0}
+  .side{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  h2{font-size:19px;margin:44px 0 6px;border-top:1px solid #d6dbe2;padding-top:24px}
+  .compare{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .compare > .side-col{flex:1;min-width:440px;background:#fff;border:1px solid #d6dbe2;border-radius:14px;padding:16px 14px 20px}
+  .compare .box{max-width:340px}
+  .vtag{font-size:17px;margin:0 0 16px;border:0;padding:0;text-align:center}
+  .vtag span{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 9px;margin-right:8px;vertical-align:middle;letter-spacing:.04em}
+  .vtag .llm{background:#3367d6} .vtag .ml{background:#ef6c00}
+  .key{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#555;margin:0 0 18px}
+  .ringwrap{display:flex;gap:28px;align-items:center;justify-content:center;flex-wrap:wrap;width:100%}
+  .ring{position:relative;width:300px;height:300px;border:4px solid #3367d6;border-radius:50%;margin:30px}
+  .ring .center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;font-size:12px;color:#455a64;width:150px}
+  .vn{position:absolute;top:50%;left:50%;width:0;height:0}
+  .vn span{position:absolute;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 7px;white-space:nowrap}
+  .r1{background:#1565c0}.r2{background:#2e7d32}.r3{background:#ef6c00}.r4{background:#6a1b9a}
+  .dead{background:#9e9e9e!important;text-decoration:line-through}
+  .legend{font-size:13px;line-height:1.8;max-width:420px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;margin:10px 0}
+  th,td{border:1px solid #d6dbe2;padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#eef1f5}
+  td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;color:#555;margin:6px 0 0}
+  .tests{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:10px}
+  .tcard{background:#fff;border:1px solid #d6dbe2;border-left:4px solid #3367d6;border-radius:8px;padding:10px 14px;font-size:13px}
+  .tcard h3{font-size:14px;margin:0 0 6px}
+  .tcard ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55}
+</style>
+</head>
+<body>
+<main>
+  <h1>Store-floor replenishment: high-level design, AI agent vs traditional ML</h1>
+  <p class="sub">Same problem solved two ways, each shown with AWS services and their Azure equivalents. Read shelf velocity, compare with stock on hand, predict tonight&rsquo;s burn, draft a pick list, and enforce guardrails in code.</p>
+<div class="key"><span><span class="svc">AWS</span> dark badge = AWS service</span><span><span class="svc az">Azure</span> blue badge = Azure equivalent</span></div>
+  <div class="compare">
+    <div class="side-col">
+      <h2 class="vtag"><span class="llm">AI AGENT</span>AI agent version</h2>
+      <div class="flow">
+        <div class="box input"><span class="svc">Amazon EventBridge</span><span class="svc az">Logic Apps</span><b>Scheduled agent run per store</b><small>for example hourly during store hours, plus an evening pre-close run</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Ingestion</span><div class="row">
+          <div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><span class="svc az">Event Hubs</span><b>Shelf velocity</b><small>RFID and POS: units sold per hour, per SKU, per shelf</small></div>
+          <div class="box input"><span class="svc">Amazon S3</span><span class="svc az">ADLS Gen2</span><b>History and signals</b><small>sales history, weather, foot traffic</small></div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box tool"><span class="svc">AWS Glue</span><span class="svc az">Azure Data Factory</span><b>Feature jobs</b><small>hourly velocity, lags, traffic and weather features</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box state"><span class="svc">SageMaker Feature Store</span><span class="svc az">ADLS Gen2 curated zone</span><b>Features for the agent&rsquo;s tools</b><small></small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box agent"><span class="svc">Amazon Bedrock (Claude)</span><span class="svc">Strands Agents</span><br><span class="svc az">Azure OpenAI</span><span class="svc az">Semantic Kernel agents</span><b>Replenishment planner agent</b><small>goal: keep shelves stocked through tonight without over-ordering; the model chooses which tools to call</small></div><div class="arrow"><span>uses tools</span><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Agent tools</span><div class="row">
+          <div class="box tool"><span class="svc">Kinesis + Lambda</span><span class="svc az">Event Hubs + Functions</span><b>RFID and POS reader</b><small>shelf velocity per SKU</small></div>
+          <div class="box tool"><span class="svc">Amazon DynamoDB</span><span class="svc az">Cosmos DB</span><b>Warehouse inventory checker</b><small>stock on hand, reservations</small></div>
+          <div class="box tool"><span class="svc">Feature Store + Lambda</span><span class="svc az">ADLS Gen2 + Functions</span><b>Burn-rate predictor</b><small>tonight&rsquo;s burn from foot traffic and weather</small></div>
+          <div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Pick-list drafter</b><small>proposes SKU and quantity</small></div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box loop"><b>Agent loop</b><small>read shelf velocity, compare with stock on hand, predict tonight&rsquo;s burn rate</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box decision">Will this shelf run dry tonight?</div><div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Guardrails in code (Step Functions / Logic Apps)</span><div class="row">
+          <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Shelf capacity</b><small>block any order above the shelf&rsquo;s max capacity</small></div>
+          <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Reserved stock</b><small>block pulling a SKU reserved for another store</small></div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box decision">Guardrail passes?</div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="branches">
+      <div class="branch"><span class="label no">No: blocked</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>rule and reason written to DynamoDB / Cosmos DB</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>agent proposes an alternative SKU or quantity, re-checked by the guardrails</small></div>
+      </div>
+      <div class="branch"><span class="label yes">Yes: passes</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Write the pick list</b><small>sent to the warehouse system</small></div>
+      </div>
+    </div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><span class="svc">Amazon CloudWatch</span><span class="svc az">Azure Monitor</span><b>Monitoring</b><small>agent runs, tool errors, guardrail blocks, token cost</small></div>
+      </div>
+    </div>
+    <div class="side-col">
+      <h2 class="vtag"><span class="ml">TRADITIONAL ML</span>Traditional ML version (circa 6-7 years ago)</h2>
+      <div class="flow">
+        <div class="box input"><span class="svc">Amazon EventBridge</span><span class="svc az">Logic Apps</span><b>Scheduled forecast run</b><small>for example hourly during store hours</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Ingestion</span><div class="row">
+          <div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><span class="svc az">Event Hubs</span><b>Shelf sales and sensors</b><small>RFID and POS, per SKU per shelf</small></div>
+          <div class="box input"><span class="svc">Amazon S3</span><span class="svc az">ADLS Gen2</span><b>Historical training data</b><small>sales history, weather, foot traffic</small></div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box ml-box"><span class="svc">AWS Glue</span><span class="svc az">Data Factory</span><b>Feature pipeline</b><small>lags, hour, day of week, promos, weather, traffic</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Demand forecasting model</span><div class="row">
+          <div class="box ml-box"><span class="svc">SageMaker training job</span><span class="svc az">Azure ML</span><b>Train</b><small>gradient boosting or time-series model, retrained on schedule</small></div>
+          <div class="box ml-box"><span class="svc">SageMaker endpoint</span><span class="svc az">Azure ML endpoint</span><b>Infer</b><small>tonight&rsquo;s units per SKU per shelf</small></div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="group"><span class="tag">Decision service (Step Functions + Lambda / Logic Apps + Functions)</span><div class="flow">
+          <div class="box state"><span class="svc">Amazon DynamoDB</span><span class="svc az">Cosmos DB</span><b>Inventory and reorder state</b><small>stock on hand, reorder points, reservations</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+          <div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Reorder point and safety stock rules</b><small>reorder point = forecast demand until restock + safety stock</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+          <div class="box decision">Below reorder point tonight?</div><div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+          <div class="row">
+            <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Shelf capacity</b><small>block any order above max capacity</small></div>
+            <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Reserved stock</b><small>block SKUs reserved for another store</small></div>
+          </div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+          <div class="box decision">Guardrail passes?</div>
+        </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="branches">
+      <div class="branch"><span class="label no">No: blocked</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>reason written to DynamoDB / Cosmos DB</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>fixed substitution rules (same category, nearest pack size)</small></div>
+      </div>
+      <div class="branch"><span class="label yes">Yes: passes</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Write the pick list</b><small>sent to the warehouse system; reorder state updated</small></div>
+      </div>
+    </div>
+        <div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><span class="svc">Amazon CloudWatch</span><span class="svc az">Azure Monitor</span><b>Monitoring</b><small>forecast accuracy, drift, guardrail blocks, run failures</small></div>
+      </div>
+    </div>
+  </div>
+  <h2>Comparison</h2>
+  <p class="sub">Design opinion, not measured: these are my judgements for a typical store-floor replenishment workload.</p>
+  <table>
+    <tr><th>Aspect</th><th>AI agent version</th><th>Traditional ML version</th></tr>
+    <tr><td>Decision logic</td><td>LLM reasons over tool results and chooses the sequence; guardrails in code have the final say</td><td>Forecast plus fixed reorder point and safety stock formula; fully deterministic</td></tr>
+    <tr><td>Flexibility to new signals</td><td>High: add a tool (for example a local event feed) and update the prompt</td><td>Low to medium: new feature engineering, retraining and validation for each signal</td></tr>
+    <tr><td>Cost per decision</td><td>Higher: model tokens per shelf or per store run</td><td>Very low: one endpoint call and a Lambda or Function step</td></tr>
+    <tr><td>Predictability and explainability</td><td>Lower: same inputs can produce different reasoning; needs audit logs and evaluation sets</td><td>High: the formula and model features explain every order</td></tr>
+    <tr><td>Latency</td><td>Seconds per store run (multiple model and tool calls)</td><td>Sub-second per store once the forecast is ready</td></tr>
+    <tr><td>Ops burden</td><td>Prompt and tool versioning, model evaluation, token budgets, guardrail testing</td><td>Feature pipelines, retraining, drift monitoring, model registry</td></tr>
+  </table>
+  <ul>
+    <li><b>Same guardrails both ways:</b> shelf capacity and reserved-SKU checks run in code, so neither the LLM nor the model can push an unsafe pick list.</li>
+    <li><b>Design opinion:</b> the ML version is the cheaper, steadier default; the agent version earns its cost where signals change often or substitutions need judgement. A hybrid (ML forecast as one of the agent&rsquo;s tools) is common.</li>
+  </ul>
+</main>
+</body>
+</html>

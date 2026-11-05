@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store replenishment traditional ML – low-level design</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f6f7f9;color:#1d1d1f}
+  main{max-width:1320px;margin:32px auto;padding:0 20px 40px}
+  h1{font-size:22px;margin:0 0 6px} .sub{margin:0 0 24px;color:#555;font-size:14px}
+  .flow{display:flex;flex-direction:column;align-items:center}
+  .row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  .box{background:#fff;border:2px solid #9aa4b2;border-radius:10px;padding:10px 14px;text-align:center;font-size:14px;min-width:170px;max-width:260px}
+  .box b{display:block;margin-bottom:2px}
+  .box small{color:#555}
+  .input{border-color:#607d8b}
+  .agent{border-color:#3367d6;background:#e8f0fe;max-width:420px}
+  .tool{border-color:#3367d6;background:#f3f7ff}
+  .check{border-color:#f9a825;background:#fff8e1}
+  .decision{border-color:#f9a825;background:#fff3c4;transform:none;border-radius:40px;padding:12px 26px;font-weight:600}
+  .fail{border-color:#c62828;background:#fdecea}
+  .pass{border-color:#2e7d32;background:#e8f5e9}
+  .group{border:1px dashed #b0b8c4;border-radius:12px;padding:12px;position:relative;width:100%;margin:6px 0}
+  .group > .tag{position:absolute;top:-10px;left:14px;background:#f6f7f9;padding:0 6px;font-size:12px;color:#555;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .side-col .group > .tag{background:#fff}
+  .arrow{display:flex;flex-direction:column;align-items:center;margin:4px 0;color:#5f6b7a;font-size:12px}
+  .arrow .line{width:2px;height:22px;background:#5f6b7a}
+  .arrow .head{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #5f6b7a}
+  .branches{display:flex;gap:28px;width:100%;justify-content:center;flex-wrap:wrap}
+  .branch{flex:1;min-width:220px;max-width:420px;display:flex;flex-direction:column;align-items:center}
+  .label{font-size:13px;font-weight:700;padding:2px 10px;border-radius:999px;margin-bottom:2px}
+  .label.no{background:#fdecea;color:#c62828} .label.yes{background:#e8f5e9;color:#2e7d32}
+  .or{font-size:12px;color:#777;margin:4px 0}
+  .loop{border-color:#3367d6;background:#f3f7ff}
+  ol{font-size:13px;text-align:left;margin:6px 0 0;padding-left:18px;color:#333}
+  ul{font-size:14px;line-height:1.6;color:#333;margin-top:28px}
+  .cols{display:flex;gap:14px;width:100%;flex-wrap:wrap;justify-content:center}
+  .col{flex:1;min-width:230px;display:flex;flex-direction:column;align-items:center;background:#fff;border:1px solid #d6dbe2;border-radius:10px;padding:10px}
+  .col h3{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em;color:#455a64}
+  .col .box{width:100%;max-width:none;min-width:0}
+  .svc{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#232f3e;border-radius:4px;padding:1px 6px;margin:0 2px 4px}
+  .svc.az{background:#0b3a66}
+  .svc.both{background:#455a64}
+  .cache{border-color:#6a1b9a;background:#f3e5f5}
+  .state{border-color:#00838f;background:#e0f7fa}
+  .ml-box{border-color:#ef6c00;background:#fff3e0}
+  .side{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;width:100%}
+  h2{font-size:19px;margin:44px 0 6px;border-top:1px solid #d6dbe2;padding-top:24px}
+  .compare{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .compare > .side-col{flex:1;min-width:440px;background:#fff;border:1px solid #d6dbe2;border-radius:14px;padding:16px 14px 20px}
+  .compare .box{max-width:340px}
+  .vtag{font-size:17px;margin:0 0 16px;border:0;padding:0;text-align:center}
+  .vtag span{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 9px;margin-right:8px;vertical-align:middle;letter-spacing:.04em}
+  .vtag .llm{background:#3367d6} .vtag .ml{background:#ef6c00}
+  .key{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#555;margin:0 0 18px}
+  .ringwrap{display:flex;gap:28px;align-items:center;justify-content:center;flex-wrap:wrap;width:100%}
+  .ring{position:relative;width:300px;height:300px;border:4px solid #3367d6;border-radius:50%;margin:30px}
+  .ring .center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;font-size:12px;color:#455a64;width:150px}
+  .vn{position:absolute;top:50%;left:50%;width:0;height:0}
+  .vn span{position:absolute;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#fff;border-radius:999px;padding:3px 7px;white-space:nowrap}
+  .r1{background:#1565c0}.r2{background:#2e7d32}.r3{background:#ef6c00}.r4{background:#6a1b9a}
+  .dead{background:#9e9e9e!important;text-decoration:line-through}
+  .legend{font-size:13px;line-height:1.8;max-width:420px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;margin:10px 0}
+  th,td{border:1px solid #d6dbe2;padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#eef1f5}
+  td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;color:#555;margin:6px 0 0}
+  .tests{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:10px}
+  .tcard{background:#fff;border:1px solid #d6dbe2;border-left:4px solid #3367d6;border-radius:8px;padding:10px 14px;font-size:13px}
+  .tcard h3{font-size:14px;margin:0 0 6px}
+  .tcard ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55}
+</style>
+</head>
+<body>
+<main>
+  <h1>Store-floor replenishment, traditional ML: low-level design (AWS with Azure equivalents)</h1>
+  <p class="sub">A demand forecasting model plus reorder point and safety stock rules, with the same guardrails enforced in code. Each box shows the AWS service and its Azure equivalent.</p>
+<div class="key"><span><span class="svc">AWS</span> dark badge = AWS service</span><span><span class="svc az">Azure</span> blue badge = Azure equivalent</span></div>
+  <div class="flow">
+    <div class="box input"><span class="svc">Amazon EventBridge</span><span class="svc az">Logic Apps</span><b>Schedules</b><small>hourly forecast runs; nightly feature build; weekly retraining</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Ingestion</span><div class="cols">
+      <div class="col"><h3>Streaming</h3><div class="box input"><span class="svc">Amazon Kinesis Data Streams</span><span class="svc az">Event Hubs</span><b>RFID and POS events</b><small>units per hour, per SKU, per shelf</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box input"><span class="svc">Amazon Kinesis Data Firehose</span><span class="svc az">Event Hubs Capture</span><b>Land raw events</b><small></small></div></div>
+      <div class="col"><h3>Batch</h3><div class="box state"><span class="svc">Amazon S3</span><span class="svc az">ADLS Gen2</span><b>Historical training data</b><small>sales history, weather, foot traffic, calendars</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div><div class="box input"><span class="svc">Amazon API Gateway</span><span class="svc az">API Management</span><b>Weather feed</b><small></small></div></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box ml-box"><span class="svc">AWS Glue</span><span class="svc az">Azure Data Factory</span><b>Feature pipeline</b><small>clean, join, lags, rolling velocity, hour, day of week, promos, weather, traffic</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box state"><span class="svc">SageMaker Feature Store</span><span class="svc az">Azure ML feature store</span><b>Offline and online features</b><small>offline for training, online for inference</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Model</span><div class="row">
+      <div class="box ml-box"><span class="svc">SageMaker training job</span><span class="svc az">Azure ML job</span><b>Train demand model</b><small>gradient boosting or time-series model, per SKU cluster; backtest gate</small></div>
+      <div class="box ml-box"><span class="svc">SageMaker Model Registry</span><span class="svc az">Azure ML registry</span><b>Approved model version</b><small></small></div>
+      <div class="box ml-box"><span class="svc">SageMaker endpoint</span><span class="svc az">Azure ML online endpoint</span><b>Inference</b><small>tonight&rsquo;s demand per SKU per shelf, with a quantile band</small></div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="group"><span class="tag">Decision service (Step Functions + Lambda / Logic Apps + Functions)</span><div class="flow">
+      <div class="box state"><span class="svc">Amazon DynamoDB</span><span class="svc az">Cosmos DB</span><b>Inventory and reorder state</b><small>stock on hand, reorder points, lead times, reservations</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+      <div class="box tool"><span class="svc">AWS Lambda</span><span class="svc az">Azure Functions</span><b>Reorder point and safety stock</b><small>reorder point = forecast demand until restock + safety stock (z × demand std × root lead time)</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+      <div class="box decision">Below reorder point tonight?</div><div class="arrow"><span>yes: draft a pick list</span><div class="line"></div><div class="head"></div></div>
+      <div class="group"><span class="tag">Guardrails in code</span><div class="row">
+        <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Shelf capacity</b><small>order must not exceed the shelf&rsquo;s max capacity</small></div>
+        <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Reserved stock</b><small>must not pull SKUs reserved for another store</small></div>
+        <div class="box check"><span class="svc">AWS Lambda</span><span class="svc az">Functions</span><b>Fail closed</b><small>missing or stale data blocks the order</small></div>
+      </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+      <div class="box decision">Guardrail passes?</div>
+    </div></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="branches">
+      <div class="branch"><span class="label no">No: blocked</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Log the block</b><small>reason written to DynamoDB / Cosmos DB</small></div><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box fail"><b>Suggest a substitute</b><small>rule-based alternative SKU or capped quantity, re-checked</small></div>
+      </div>
+      <div class="branch"><span class="label yes">Yes: passes</span><div class="arrow"><div class="line"></div><div class="head"></div></div>
+        <div class="box pass"><span class="svc">Warehouse system API</span><b>Write the pick list</b><small>idempotent write; reorder state updated</small></div>
+      </div>
+    </div>
+    <div class="arrow"><div class="line"></div><div class="head"></div></div>
+    <div class="box pass"><span class="svc">Amazon CloudWatch</span><span class="svc">SageMaker Model Monitor</span><span class="svc az">Azure Monitor</span><b>Monitoring</b><small>feature and prediction drift, forecast error, guardrail blocks, run failures</small></div>
+  </div>
+  <ul>
+    <li><b>Data:</b> Kinesis or Event Hubs streams shelf events; S3 or ADLS Gen2 holds history; Glue or Data Factory builds features into the feature store.</li>
+    <li><b>Model:</b> SageMaker or Azure ML trains on a schedule and serves tonight&rsquo;s forecast from an online endpoint.</li>
+    <li><b>Control:</b> Step Functions with Lambda (or Logic Apps with Functions) applies reorder point and safety stock rules, then the same guardrails in code.</li>
+  </ul>
+  <h2>Latency targets</h2>
+  <p class="sub">Design targets. These are estimates, not measurements from a live store. Training is a batch job measured in minutes and is not on this path.</p>
+  <table>
+    <tr><th>Path</th><th>What it covers</th><th>P50 (ms)</th><th>P90 (ms)</th><th>P99 (ms)</th></tr>
+    <tr><td>Online feature lookup</td><td>Feature Store or Azure ML feature store read for one shelf</td><td class="n">10</td><td class="n">20</td><td class="n">40</td></tr>
+    <tr><td>Endpoint inference</td><td>One batched call for all SKUs on a shelf</td><td class="n">30</td><td class="n">60</td><td class="n">150</td></tr>
+    <tr><td>Decision step per shelf</td><td>Reorder point and safety stock rules in Lambda or Functions</td><td class="n">20</td><td class="n">50</td><td class="n">120</td></tr>
+    <tr><td>Guardrail evaluation</td><td>Capacity, reserved-SKU and fail-closed checks</td><td class="n">2</td><td class="n">5</td><td class="n">15</td></tr>
+    <tr><td>Warehouse write</td><td>Pick-list write plus state update</td><td class="n">120</td><td class="n">300</td><td class="n">800</td></tr>
+    <tr><td>Scheduled run per store</td><td>Schedule trigger to all pick lists written</td><td class="n">2,000</td><td class="n">5,000</td><td class="n">12,000</td></tr>
+  </table>
+  <p class="note">On endpoint timeout or a failed model check, the run falls back to the last forecast or holds orders (fail closed); it never writes an unchecked pick list.</p>
+  <h2>Testing</h2>
+  <div class="tests">
+    <div class="tcard"><h3>1. Model accuracy</h3><ul>
+      <li>Rolling-origin backtesting over past seasons, holidays and promos.</li>
+      <li>MAPE and WAPE per SKU and per SKU cluster, plus bias; WAPE preferred for slow movers.</li>
+      <li>Time-based holdout set; compare against a naive seasonal baseline.</li>
+      <li>Business metrics in simulation: stockout hours avoided and over-order units.</li>
+    </ul></div>
+    <div class="tcard"><h3>2. Drift monitoring</h3><ul>
+      <li>SageMaker Model Monitor or Azure ML data drift on features and predictions.</li>
+      <li>Track live forecast error once actual sales arrive; CloudWatch or Azure Monitor alarms on thresholds.</li>
+      <li>Drift alarm triggers retraining through the pipeline, never a silent model swap.</li>
+    </ul></div>
+    <div class="tcard"><h3>3. Load testing</h3><ul>
+      <li>k6 or Locust against the endpoint and decision service (example: all stores in one hourly window).</li>
+      <li>Check endpoint autoscaling, Lambda or Functions concurrency, and DynamoDB or Cosmos DB throughput.</li>
+      <li>Validate P50, P90 and P99 against the table with X-Ray or Application Insights traces.</li>
+    </ul></div>
+    <div class="tcard"><h3>4. Guardrail correctness</h3><ul>
+      <li>Capacity at just below, at and above max; above must block.</li>
+      <li>Reserved-SKU pulls must block, including partial quantities.</li>
+      <li>Fail closed on missing or stale capacity, stock, reservation or forecast data.</li>
+      <li>Golden set of decisions that must never change result.</li>
+    </ul></div>
+    <div class="tcard" style="grid-column:1/-1;border-left-color:#2e7d32"><h3>5. CI and model validation gate</h3><ul>
+      <li><b>pytest:</b> feature transforms, reorder point and safety stock math, guardrails, with fixtures for SKUs, shelves and sales histories.</li>
+      <li><b>Model validation gate:</b> a new model is registered only if backtest WAPE beats the current model and the baseline; otherwise deploy stops.</li>
+      <li><b>Pipeline:</b> CodePipeline with CodeBuild and SageMaker Pipelines, or Azure DevOps or GitHub Actions with Azure ML pipelines; results to the CI dashboard and CloudWatch or Azure Monitor.</li>
+    </ul></div>
+  </div>
+</main>
+</body>
+</html>
