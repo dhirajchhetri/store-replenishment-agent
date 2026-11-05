@@ -1,0 +1,74 @@
+{
+  "Comment": "Score one store, apply reorder rules and guardrails, and save a pending pick list. Associate approval is the API, which is what publishes a warehouse order.",
+  "StartAt": "ScoreStore",
+  "States": {
+    "ScoreStore": {
+      "Type": "Task",
+      "Resource": "__SCORE_ARN__",
+      "ResultPath": "$.score",
+      "Next": "DecideStore",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "Lambda.Unknown"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "SendToDlq"
+        }
+      ]
+    },
+    "DecideStore": {
+      "Type": "Task",
+      "Resource": "__DECIDE_ARN__",
+      "ResultPath": "$.decide",
+      "Next": "GuardrailStore",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "SendToDlq"
+        }
+      ]
+    },
+    "GuardrailStore": {
+      "Type": "Task",
+      "Resource": "__GUARDRAIL_ARN__",
+      "ResultPath": "$.guardrail",
+      "Next": "SavePendingPickList",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "SendToDlq"
+        }
+      ]
+    },
+    "SavePendingPickList": {
+      "Type": "Task",
+      "Resource": "__SAVE_ARN__",
+      "End": true,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "SendToDlq"
+        }
+      ]
+    },
+    "SendToDlq": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "__DLQ_URL__",
+        "MessageBody.$": "$"
+      },
+      "End": true
+    }
+  }
+}
