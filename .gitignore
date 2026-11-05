@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+data/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.zip
+.DS_Store
